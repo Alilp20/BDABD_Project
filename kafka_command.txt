@@ -1,0 +1,9 @@
+================================================================================
+Starting a kafka topic taxi.raw
+================================================================================
+
+docker exec kafka-1 kafka-topics --create \
+    --topic taxi.raw \
+    --partitions 6 \
+    --replication-factor 3 \
+    --bootstrap-server kafka-1:9093
