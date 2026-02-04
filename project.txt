@@ -1,0 +1,390 @@
+================================================================================
+NYC TAXI STREAMING PIPELINE - PROJECT SETUP STEPS
+================================================================================
+
+PROJECT OVERVIEW
+Pipeline Big Data streaming temps réel pour le traitement de flux de taxi NYC
+Utilisant Kafka, MongoDB (sharded), et Cassandra (multi-nœuds)
+
+DELIVERABLES REQUIRED
+- Docker-compose pour Kafka (multi-broker cluster) ✓ (DONE)
+- Docker-compose pour MongoDB (sharded cluster)
+- Docker-compose pour Cassandra (multi-node cluster)
+- Orchestration complète du pipeline (producers + consumers)
+- Scripts de test et benchmarking
+- Rapport documenté
+
+================================================================================
+PHASE 0: PROJECT STRUCTURE SETUP
+================================================================================
+
+Step 0.1: Create folder structure
+  mkdir -p producer consumer schema benchmarks data logs
+  
+Step 0.2: Create main orchestration docker-compose at project root
+  /Users/mac/Desktop/bdabd_project/docker-compose.yml
+  - Définir les services Kafka, MongoDB, Cassandra avec networking
+
+
+================================================================================
+PHASE 1: KAFKA INFRASTRUCTURE
+================================================================================
+
+Step 1.1: Kafka Multi-Broker Cluster (ALREADY DONE)
+  Location: /kafka/docker-compose.yml
+  Status: ✓ Created 3-broker KRaft cluster (kafka-1, kafka-2, kafka-3)
+  Ports: 9092, 9094, 9096 (host), 9093-9095 (docker)
+  Action: Run `docker compose up -d` in /kafka folder
+
+Step 1.2: Create Kafka topic "taxi.raw"
+  Command: docker exec kafka-1 kafka-topics --create \
+    --topic taxi.raw \
+    --partitions 6 \
+    --replication-factor 3 \
+    --bootstrap-server kafka-1:9093
+
+Step 1.3: Verify Kafka cluster
+  Check broker status and topic creation
+
+
+================================================================================
+PHASE 2: MONGODB SETUP (SHARDED CLUSTER)
+================================================================================
+
+Step 2.1: Design MongoDB docker-compose
+  Location: /mongo/docker-compose.yml
+  Services needed:
+    - Replica Set (ConfigServer) x 3 nodes
+    - Shard 1 (Replica Set) x 3 nodes
+    - Shard 2 (Replica Set) x 3 nodes
+    - Shard 3 (Replica Set) x 3 nodes
+    - MongoS (Router) x 2 instances
+  Volumes: Persist data to avoid loss on restart
+
+Step 2.2: Create MongoDB schema script
+  Location: /schema/mongodb_init.js
+  Create database: taxi_db
+  Create collection: taxi_events with sharded index on pickup_borough_id
+  
+  Schema structure:
+  {
+    _id: ObjectId,
+    trip_id: String,
+    pickup_datetime: ISODate,
+    dropoff_datetime: ISODate,
+    pickup_location: {
+      longitude: Double,
+      latitude: Double,
+      borough: String,
+      borough_id: Int
+    },
+    dropoff_location: {
+      longitude: Double,
+      latitude: Double,
+      borough: String,
+      borough_id: Int
+    },
+    passenger_count: Int,
+    trip_distance: Double,
+    fare_amount: Double,
+    payment_type: String,
+    calculated_metrics: {
+      speed_kmh: Double,
+      price_per_km: Double
+    }
+  }
+
+Step 2.3: Initialize MongoDB sharded cluster
+  Start services → Configure replica sets → Enable sharding → Create shards
+  Run schema initialization script
+
+
+================================================================================
+PHASE 3: CASSANDRA SETUP (MULTI-NODE CLUSTER)
+================================================================================
+
+Step 3.1: Design Cassandra docker-compose
+  Location: /cassandra/docker-compose.yml
+  Services needed:
+    - Cassandra node-1 (seed)
+    - Cassandra node-2
+    - Cassandra node-3
+    (Scalable to 6 nodes for later testing)
+  Replication Factor: 3
+  Volumes: Data persistence
+
+Step 3.2: Create Cassandra schema
+  Location: /schema/cassandra_init.cql
+  
+  Keyspace: taxi_data (replication_factor: 3)
+  
+  Table 1: trips_by_borough_hour
+    Partition Key: (borough_id, year, month, day, hour)
+    Clustering Key: (pickup_datetime, trip_id)
+    Columns: all trip data + calculated metrics
+  
+  Table 2: trips_by_date
+    Partition Key: (year, month, day)
+    Clustering Key: (borough_id, pickup_datetime)
+    For time-series queries
+  
+  Table 3: fare_revenue_by_hour
+    Partition Key: (borough_id, year, month, day, hour)
+    Clustering Key: (pickup_datetime)
+    Columns: fare_amount, trip_distance, passenger_count
+
+Step 3.3: Initialize Cassandra cluster
+  Start services → Wait for gossip → Run schema initialization
+
+
+================================================================================
+PHASE 4: DATA PREPARATION
+================================================================================
+
+Step 4.1: Download NYC Taxi Dataset (January 2024)
+  Source: https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
+  Save to: /data/raw/
+
+Step 4.2: Data conversion & preprocessing
+  Location: /scripts/prepare_data.py
+  
+  Input: CSV file (yellow_tripdata_2024-01.csv)
+  Output: JSON lines format (one JSON per line)
+  
+  Processing:
+    - Parse datetime fields
+    - Extract borough from zone_id or add geolocation lookup
+    - Calculate: speed_kmh = trip_distance / (duration_minutes/60)
+                 price_per_km = fare_amount / trip_distance
+    - Filter: Remove invalid records (distance=0, negative values, etc.)
+    - Sample or limit: 1M+ records for testing
+  
+  Output: /data/processed/taxi_events.jsonl
+
+Step 4.3: Data validation
+  Check format, missing fields, data quality
+
+
+================================================================================
+PHASE 5: KAFKA PRODUCER
+================================================================================
+
+Step 5.1: Implement Kafka Producer
+  Location: /producer/taxi_producer.py (Python)
+  
+  Functionality:
+    - Read from taxi_events.jsonl
+    - Send to topic "taxi.raw" with partitioning by pickup_borough_id
+    - Simulate real-time: configurable rate (e.g., 1000 msg/sec)
+    - Add error handling and retry logic
+    - Log throughput metrics
+  
+  Dependencies: confluent-kafka, json, logging
+
+Step 5.2: Create producer docker setup
+  Dockerfile: /producer/Dockerfile
+  Allow easy deployment and scaling
+
+
+================================================================================
+PHASE 6: KAFKA CONSUMERS
+================================================================================
+
+Step 6.1: MongoDB Consumer
+  Location: /consumer/mongodb_consumer.py
+  
+  Functionality:
+    - Consume from "taxi.raw"
+    - Enrich data if needed (speed calculation, zone enrichment)
+    - Batch insert into MongoDB taxi_events collection (bulk writes)
+    - Offset management & error handling
+    - Metrics: ingestion rate, latency, errors
+
+Step 6.2: Cassandra Consumer
+  Location: /consumer/cassandra_consumer.py
+  
+  Functionality:
+    - Consume from "taxi.raw"
+    - Parse and transform data for Cassandra schema
+    - Insert into multiple Cassandra tables (trips_by_borough_hour, etc.)
+    - Handle write failures and consistency
+    - Metrics: write rate, latency
+
+Step 6.3: Create consumer docker setup
+  Dockerfile: /consumer/Dockerfile
+  docker-compose configuration for easy scaling
+
+
+================================================================================
+PHASE 7: ORCHESTRATION
+================================================================================
+
+Step 7.1: Root docker-compose.yml
+  Location: /Users/mac/Desktop/bdabd_project/docker-compose.yml
+  
+  Include all services:
+    - Kafka (reference to /kafka/docker-compose.yml or inline)
+    - MongoDB (reference to /mongo/docker-compose.yml or inline)
+    - Cassandra (reference to /cassandra/docker-compose.yml or inline)
+    - Producer service
+    - MongoDB Consumer service (1-2 instances)
+    - Cassandra Consumer service (1-2 instances)
+  
+  Network: Create shared network for all containers
+
+Step 7.2: Startup script
+  Location: /scripts/start_pipeline.sh
+  
+  Actions:
+    1. Start all Docker services (docker-compose up -d)
+    2. Wait for services to be ready
+    3. Initialize schemas (run init scripts)
+    4. Start producer
+    5. Start consumers
+    6. Validate pipeline status
+
+
+================================================================================
+PHASE 8: TESTING & BENCHMARKING
+================================================================================
+
+Step 8.1: Setup benchmarking framework
+  Location: /benchmarks/
+  Create test modules for:
+    - Ingestion performance
+    - Query latency
+    - Scalability
+    - Fault tolerance
+
+Step 8.2: MongoDB Tests
+  benchmark_mongodb_ingestion.py
+    - Measure throughput (events/sec)
+    - Measure latency (end-to-end from Kafka)
+    - Test with 100K+ events
+    - Chart results (throughput vs time)
+  
+  benchmark_mongodb_sharding.py
+    - Verify data distribution across shards
+    - Test shard balancing
+    - Measure failover time
+  
+  benchmark_mongodb_queries.py
+    - Top zones by revenue/hour
+    - Average speed per borough
+    - Anomaly detection (speed > 200 kmh, distance = 0)
+    - Measure query latency under load
+  
+  benchmark_mongodb_scalability.py
+    - Test with 1, 3, 6 shards
+    - Measure impact on ingestion rate, latency, resources
+
+Step 8.3: Cassandra Tests
+  benchmark_cassandra_ingestion.py
+    - Measure write throughput
+    - Measure end-to-end latency
+    - Test different partition keys
+    - Chart results
+  
+  benchmark_cassandra_queries.py
+    - Time-series queries (revenue by borough/hour)
+    - Test with materialized views
+    - Measure latency under load
+  
+  benchmark_cassandra_scalability.py
+    - Test with 3, 6 nodes
+    - Measure throughput, latency, CPU/RAM per node
+  
+  benchmark_cassandra_resilience.py
+    - Kill node, test availability
+    - Test consistency levels (QUORUM, LOCAL_ONE)
+    - Measure failover/recovery time
+
+Step 8.4: Create monitoring dashboards
+  Optional: Prometheus + Grafana for real-time metrics
+
+
+================================================================================
+QUICK START CHECKLIST
+================================================================================
+
+PHASE 0 - Structure
+  [x] Create folder structure (producer, consumer, schema, benchmarks, data)
+  [x] Create root docker-compose.yml
+
+PHASE 1 - Kafka
+  [x] Verify Kafka 3-broker cluster (/kafka/docker-compose.yml)
+  [ ] Create taxi.raw topic
+
+PHASE 2 - MongoDB
+  [ ] Create /mongo/docker-compose.yml (sharded cluster)
+  [ ] Create /schema/mongodb_init.js
+  [ ] Start MongoDB and verify connectivity
+
+PHASE 3 - Cassandra
+  [ ] Create /cassandra/docker-compose.yml (3-6 nodes)
+  [ ] Create /schema/cassandra_init.cql
+  [ ] Start Cassandra and verify connectivity
+
+PHASE 4 - Data
+  [ ] Download NYC Taxi data
+  [ ] Create /scripts/prepare_data.py
+  [ ] Generate taxi_events.jsonl
+
+PHASE 5 - Producer
+  [ ] Create /producer/taxi_producer.py
+  [ ] Create /producer/Dockerfile
+  [ ] Test producer with sample data
+
+PHASE 6 - Consumers
+  [ ] Create /consumer/mongodb_consumer.py
+  [ ] Create /consumer/cassandra_consumer.py
+  [ ] Create /consumer/Dockerfile
+
+PHASE 7 - Orchestration
+  [ ] Update root docker-compose.yml with all services
+  [ ] Create /scripts/start_pipeline.sh
+
+PHASE 8 - Testing
+  [ ] Implement MongoDB benchmarks
+  [ ] Implement Cassandra benchmarks
+  [ ] Run all tests and collect results
+  [ ] Generate graphs and analysis
+
+DELIVERABLES
+  [ ] All docker-compose files (Kafka, MongoDB, Cassandra)
+  [ ] Producer/Consumer source code
+  [ ] Schema definitions
+  [ ] Test reports with graphs
+  [ ] Final documentation/rapport
+
+================================================================================
+USEFUL COMMANDS
+================================================================================
+
+# Start everything
+cd /Users/mac/Desktop/bdabd_project
+docker-compose up -d
+
+# Check Kafka brokers
+docker exec kafka-1 kafka-broker-api-versions --bootstrap-server kafka-1:9093
+
+# List topics
+docker exec kafka-1 kafka-topics --list --bootstrap-server kafka-1:9093
+
+# Check MongoDB status
+docker exec mongo-router-1 mongosh --host localhost:27017
+
+# Check Cassandra status
+docker exec cassandra-1 nodetool status
+
+# View logs
+docker-compose logs kafka-1
+docker-compose logs mongo-shard1-1
+docker-compose logs cassandra-1
+
+# Stop all services
+docker-compose down -v
+
+================================================================================
+DEADLINE: January 5, 2026
+================================================================================

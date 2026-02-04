@@ -1,0 +1,48 @@
+networks:
+  taxi-kafka-network:
+    external: true
+    name: kafka_taxi-kafka-network
+services:
+
+  # ---------------- CONFIG SERVER ----------------
+  mongo-config:
+    image: mongo:7.0
+    container_name: mongo-config
+    command: mongod --configsvr --replSet rs-config --port 27017 --wiredTigerCacheSizeGB 0.25
+    networks: [taxi-kafka-network]
+
+  # ---------------- SHARD 1 ----------------
+  mongo-shard1:
+    image: mongo:7.0
+    container_name: mongo-shard1
+    command: mongod --shardsvr --replSet rs-shard1 --port 27017 --wiredTigerCacheSizeGB 0.25
+    networks: [taxi-kafka-network]
+
+  # ---------------- SHARD 2 ----------------
+  mongo-shard2:
+    image: mongo:7.0
+    container_name: mongo-shard2
+    command: mongod --shardsvr --replSet rs-shard2 --port 27017 --wiredTigerCacheSizeGB 0.25
+    networks: [taxi-kafka-network]
+
+  # ---------------- SHARD 3 ----------------
+  mongo-shard3:
+    image: mongo:7.0
+    container_name: mongo-shard3
+    command: mongod --shardsvr --replSet rs-shard3 --port 27017 --wiredTigerCacheSizeGB 0.25
+    networks: [taxi-kafka-network]
+
+  # ---------------- MONGOS ROUTER ----------------
+  mongos:
+    image: mongo:7.0
+    container_name: mongos
+    depends_on:
+      - mongo-config
+      - mongo-shard1
+      - mongo-shard2
+      - mongo-shard3
+    command: >
+      mongos --configdb rs-config/mongo-config:27017 --port 27017 --bind_ip_all
+    ports:
+      - "27017:27017"
+    networks: [taxi-kafka-network]

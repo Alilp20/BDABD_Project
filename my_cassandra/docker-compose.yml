@@ -1,0 +1,39 @@
+networks:
+  taxi-kafka-network:
+    external: true
+    name: kafka_taxi-kafka-network
+
+# cassandra-compose.yml
+services:
+  cassandra1:
+    image: cassandra:4.1
+    container_name: cassandra1
+    ports: ["9042:9042"]
+    environment:
+      CASSANDRA_CLUSTER_NAME: "TaxiCluster"
+      CASSANDRA_SEEDS: "cassandra1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_RPC_ADDRESS: "0.0.0.0"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    networks: [taxi-kafka-network]
+
+  cassandra2:
+    image: cassandra:4.1
+    container_name: cassandra2
+    environment:
+      CASSANDRA_CLUSTER_NAME: "TaxiCluster"
+      CASSANDRA_SEEDS: "cassandra1"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    networks: [taxi-kafka-network]
+
+  cassandra3:
+    image: cassandra:4.1
+    container_name: cassandra3
+    environment:
+      CASSANDRA_CLUSTER_NAME: "TaxiCluster"
+      CASSANDRA_SEEDS: "cassandra1"
+      MAX_HEAP_SIZE: "512M"
+      HEAP_NEWSIZE: "100M"
+    networks: [taxi-kafka-network]

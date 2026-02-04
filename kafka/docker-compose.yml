@@ -1,0 +1,108 @@
+# Isolated network for kafka cluster -- ensuring safe communication between containers
+networks:
+  taxi-kafka-network:
+    driver: bridge
+
+# services definition for 3-node Kafka cluster with Kafka UI
+services:
+  kafka1:
+    image: confluentinc/cp-kafka:7.8.0
+    hostname: kafka1
+    container_name: kafka1
+    ports:
+      - "9092:9092"   # External client port
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
+      KAFKA_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://0.0.0.0:9092,CONTROLLER://kafka1:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka1:19092,EXTERNAL://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: '22AE092D-2AAC-4F8B-8416-E87BD0F10721'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms256M" # Set heap size to 256MB
+      KAFKA_LOG_RETENTION_BYTES: 104857600 # Max 100MB per broker
+      KAFKA_LOG_RETENTION_HOURS: 1 # Retain logs for 1 hour
+    volumes:
+      - ../data/cleaned_data:/data
+    networks:
+      - taxi-kafka-network
+
+  kafka2:
+    image: confluentinc/cp-kafka:7.8.0
+    hostname: kafka2
+    container_name: kafka2
+    ports:
+      - "9094:9094"  # External client port
+    environment:
+      KAFKA_NODE_ID: 2
+      KAFKA_BROKER_ID: 2
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
+      KAFKA_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://0.0.0.0:9094,CONTROLLER://kafka2:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka2:19092,EXTERNAL://localhost:9094'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: '22AE092D-2AAC-4F8B-8416-E87BD0F10721'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms256M" # Set heap size to 256MB
+      KAFKA_LOG_RETENTION_BYTES: 104857600 # Max 100MB per broker
+      KAFKA_LOG_RETENTION_HOURS: 1 # Retain logs for 1 hour
+    volumes:
+      - ../data/cleaned_data:/data
+    networks:
+      - taxi-kafka-network
+
+  kafka3:
+    image: confluentinc/cp-kafka:7.8.0
+    hostname: kafka3
+    container_name: kafka3
+    ports:
+      - "9096:9096"  # External client port
+    environment:
+      KAFKA_NODE_ID: 3
+      KAFKA_BROKER_ID: 3
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka1:9093,2@kafka2:9093,3@kafka3:9093'
+      KAFKA_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://0.0.0.0:9096,CONTROLLER://kafka3:9093'
+      KAFKA_ADVERTISED_LISTENERS: 'INTERNAL://kafka3:19092,EXTERNAL://localhost:9096'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'INTERNAL'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      CLUSTER_ID: '22AE092D-2AAC-4F8B-8416-E87BD0F10721'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xmx256M -Xms256M" # Set heap size to 256MB
+      KAFKA_LOG_RETENTION_BYTES: 104857600 # Max 100MB per broker
+      KAFKA_LOG_RETENTION_HOURS: 1 # Retain logs for 1 hour
+    volumes:
+      - ../data/cleaned_data:/data
+    networks:
+      - taxi-kafka-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:19092,kafka2:19094,kafka3:19096
+    depends_on:
+      - kafka1
+      - kafka2
+      - kafka3
+    networks:
+      - taxi-kafka-network

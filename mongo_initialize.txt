@@ -1,0 +1,37 @@
+================================================================================
+Initializing config server
+================================================================================
+docker exec -it mongo-config mongosh --port 27017 --eval '
+rs.initiate({
+  _id: "rs-config",
+  configsvr: true,
+  members: [{ _id: 0, host: "mongo-config:27017" }]
+})'
+
+================================================================================
+Initializing the Shards
+================================================================================
+docker exec -it mongo-shard1 mongosh --port 27017 --eval 'rs.initiate({ _id: "rs-shard1", members: [{ _id: 0, host: "mongo-shard1:27017" }] })'
+
+docker exec -it mongo-shard2 mongosh --port 27017 --eval 'rs.initiate({ _id: "rs-shard2", members: [{ _id: 0, host: "mongo-shard2:27017" }] })'
+
+docker exec -it mongo-shard3 mongosh --port 27017 --eval 'rs.initiate({ _id: "rs-shard3", members: [{ _id: 0, host: "mongo-shard3:27017" }] })'
+
+
+
+================================================================================
+Registering Shards with the Router (mongos)
+================================================================================
+docker exec -it mongos mongosh --port 27017 --eval '
+sh.addShard("rs-shard1/mongo-shard1:27017");
+sh.addShard("rs-shard2/mongo-shard2:27017");
+sh.addShard("rs-shard3/mongo-shard3:27017");
+'
+
+================================================================================
+Enable Sharding for your Collection
+================================================================================
+docker exec -it mongos mongosh --port 27017 --eval '
+sh.enableSharding("taxi_db");
+sh.shardCollection("taxi_db.taxi_events", { "trip_id": "hashed" });
+'
